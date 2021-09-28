@@ -1,0 +1,16 @@
+ironpython instructions
+change directory for take files in python script (trajectorizeandexport.py)
+open iron python console and write: import sys
+add path with scripts sys.path.append('C:\pythonscriptsmotive')
+
+(and others if util not there)
+
+Then write:
+import trajectorizeandexport
+
+
+if you get an error message try again.
+
+
+
+seems to work one block at a time
