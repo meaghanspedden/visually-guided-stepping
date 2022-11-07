@@ -1,13 +1,14 @@
 classdef OptiTrackerSimple_London < handle
     % write a description of the class here.
+    
     properties (Access = private)
         
         Block=4;
-        SubjID=111;
-        leglength=.51 %in meters (now natural step length!!)
-
+        SubjID=6;
+        leglength=.5; %in meters (now natural step length!!)
+        whichLeg = 'r';
         
-        BoxRadius = 0.05; % Radius(Width/Height) of the boxes in meters
+        BoxRadius = 0.03; % Radius(Width/Height) of the boxes in meters
         SpawnInterval = 7; % The number of spawns per minute
         FPS = 20; % How often the figure should be updated
         Life = 5; % The Total life of the box in seconds
@@ -29,6 +30,9 @@ classdef OptiTrackerSimple_London < handle
         hMenu = [];
         fid = [];
         Cursor = struct('x',0,'y',0,'z',0);
+        
+        
+        
     end
     methods
         % methods, including the constructor are defined in this block
@@ -63,7 +67,7 @@ classdef OptiTrackerSimple_London < handle
                 catch
                     obj.SerialPort = [];
                     fprintf( ['Opening serialport (COM' num2str(list(id)) ') failed\n'] )
-                     %error('No COM connection')
+                    %error('No COM connection')
                 end
             else
                 fprintf( 'No serialport was found\n' )
@@ -137,60 +141,75 @@ classdef OptiTrackerSimple_London < handle
                 end
             end
         end
-          
+        
         % Start the game
         function Start(obj,Filename)
             % Prepare folder and file for saving
             %if nargin == 1
-                %Filename = datestr(now,'yyyy-mm-dd_HH_MM_SS');
+            %Filename = datestr(now,'yyyy-mm-dd_HH_MM_SS');
             %else
-                Filename = ['Subj_',num2str(obj.SubjID),'_VGstepping_Block_',num2str(obj.Block), '_' datestr(now,'yyyy-mm-dd_HH_MM_SS')];
+            Filename = ['Subj_',num2str(obj.SubjID),'_VGstepping_Block_',num2str(obj.Block), '_' datestr(now,'yyyy-mm-dd_HH_MM_SS')];
             %end
             obj.PrepareFigure();
             if ~exist('SavedData','dir')
                 mkdir('SavedData');
             end
             obj.fid = fopen(['./SavedData/' Filename '.txt'],'w');
-
-
-            n = 45;%Number of trials for each mode, 45 now
+            [y1, Fs1] = audioread('hit.wav');
+            [y2, Fs2] = audioread('hit2.wav');
+            
+            
+            n = 60;%Number of trials for each mode            
             Modes = {'Stand','Stand and watch','Step','Step on targets'};
-%             ModeOrder = randsample(4,4)';
-              ModeOrder=[4 3 2];
+            ModeOrder=[4];
+            
+            %YStandVis_Backward = @(t) (1-min(1,max(0,t*3)))*(obj.leglength);
+            YStandVis_Forward = @(t) min(1,max(0,(t-0.1)*4))*(obj.leglength);
             YStandVis_Backward = @(t) (1-min(1,max(0,t*3)))*(obj.leglength);
-            counter=0;
+            
+            
+           
             for Mode = ModeOrder
+                counter=0;
                 obj.dummyMode = Mode;
                 fprintf(obj.fid,'%.8f;Mode;%i\r\n',now,Mode);
                 h = text(0,0,Modes{Mode},'FontSize',40,'HorizontalAlignment','center');
+                
                 tic();
                 while toc()<4 && obj.Update()
-                    %Show infotext for 5 seconds
+                    %Show infotext
                 end
                 delete(h)
                 disp(Modes{Mode});
                 for i = 1:n %loop for trials
-                    counter=counter + 1; 
-                    if ~isempty(obj.natnetclient) && Mode~=2
-                        takename=sprintf('Subject %g Block %g trial %g',obj.SubjID, obj.Block,counter); %for motive recordings
-                        obj.natnetclient.setTakeName(takename);
-                    end
+                    counter=counter + 1;
+                    
                     if ~obj.Update()
                         fclose(obj.fid);
                         return;
                     end
                     disp([Modes{Mode} ' ' num2str(i) '/' num2str(n) ' - Prepare']);
-%                     sound(sin(1:1000)) %first sound
                     tic();
+                    
                     if Mode == 2
-                        while toc()<1 && obj.Update(0,0)
-                            %1 second prepare
+                        
+                        while toc()<0.75 && obj.Update(0,0)
+                            
+                            set(obj.hUser,'MarkerFaceColor','y')
                         end
                     else
-                        while toc()<1 && obj.Update()
-                            %1 second prepare
+                        while toc()<0.75 && obj.Update()
+                            
+                            set(obj.hUser,'MarkerFaceColor','y')
+                            
+                            %prepare
                         end
                     end
+                    %change user color back
+                    set(obj.hUser,'MarkerFaceColor','b')
+                     while toc()<1 && obj.Update()
+                     end
+                    
                     if obj.Update()
                         disp([Modes{Mode} ' ' num2str(i) '/' num2str(n) ' - Test']);
                         
@@ -219,30 +238,37 @@ classdef OptiTrackerSimple_London < handle
                                 set(obj.hCross,'Visible','on');
                         end
                         fprintf(obj.fid,'%.8f;BoxPos;%.8f\r\n',now,(obj.leglength)+offset);
+                        tic();
+                        
+                        while toc()<1 && obj.Update() % 1 s while target is visible
+                        end
                         obj.SendTrigger(); %trial start trigger
-      
+                        
                         tic();
 
-                        if ~isempty(obj.natnetclient)&& Mode~=2
-                            obj.natnetclient.startRecord() %start motive recording
-                        end
                         hit = false;
                         
                         %Send start-sound
                         obj.Update(); %want to see initially blue circle
+                        
                         tic()
-                        sound(sin((1:3000)))
-                        while toc()<1 && obj.Update()
-                        end
-                        while toc()<4
+                        sound(y1, Fs1)
+                        %sound(sin((1:3000)))
+                        
+                        while toc()<3.5
                             %5 second test
-                            if Mode == 2 || Mode ==4 %
-                             set(obj.hUser,'visible','on') % change to on to see blue dot 
-                            end
-%                             else
+                            %                             if Mode == 2 || Mode ==4 %
+                            %                              set(obj.hUser,'visible','on') % change to on to see blue dot
+                            %                             end
+                            % %                             else
+                            %                                 [FigureOpen,x,y] = obj.Update();
+                            %                             %end
+                            if Mode == 2
+                                [FigureOpen,x,y] = obj.Update(0,YStandVis_Forward(toc()/5));
+                            else
                                 [FigureOpen,x,y] = obj.Update();
-                            %end
-
+                            end
+                            
                             if FigureOpen
                                 if ~hit && ~isempty(x)
                                     xd = abs(x);
@@ -250,7 +276,7 @@ classdef OptiTrackerSimple_London < handle
                                     
                                     % Update box if hit
                                     if max(xd,yd)<obj.BoxRadius
-                                         set(obj.hBox,'FaceColor','g');
+                                        set(obj.hBox,'FaceColor','g');
                                         hit = true;
                                         if Mode ~= 2
                                             fprintf(obj.fid,'%.8f;HitBox\r\n',now);
@@ -261,7 +287,7 @@ classdef OptiTrackerSimple_London < handle
                             else
                                 break;
                             end
-  
+                            
                         end
                         
                         %Send stop-sound & trigger
@@ -269,14 +295,17 @@ classdef OptiTrackerSimple_London < handle
                             set(obj.hUser,'visible','on')
                         end
                         fprintf(obj.fid,'%.8f;TrialEnd\r\n',now);
-                        obj.SendTrigger(); %stop trigger
-                        sound([sin((1:1000)/2) zeros(1,1000) sin((1:1000)/2)])
+                        % obj.SendTrigger(); %stop trigger
+                        %sound([sin((1:1000)/2) zeros(1,1000) sin((1:1000)/2)])
+                        sound(y2,Fs2)
                         
-                        if ~isempty(obj.natnetclient)&& Mode~=2
-                            obj.natnetclient.stopRecord();
-                        end
+                        %                         if ~isempty(obj.natnetclient)&& counter == n
+                        %
+                        %                             obj.natnetclient.stopRecord();
+                        %                         end
                         
                         if Mode == 2
+                            
                             abcd = obj.Update(0,YStandVis_Backward(0));
                         else
                             abcd = obj.Update();
@@ -287,16 +316,19 @@ classdef OptiTrackerSimple_London < handle
                             while toc()<0.75 && obj.Update() %wait to give user feedback endpoint error
                             end
                             set(obj.hBox,'Visible','off');
-                            set(obj.hBox,'FaceColor','r');
+                            set(obj.hBox,'FaceColor','m');
+                            set(obj.hBox, 'EdgeColor','b');
+                            set(obj.hBox, 'LineWidth', 1);
+                            
                             disp([Modes{Mode} ' ' num2str(i) '/' num2str(n) ' - Goback']);
                             tic();
                             if Mode == 2
                                 set(obj.hUser,'Visible','on')
-                                while toc()<3.25 && obj.Update(0,YStandVis_Backward(toc()/3.25))
-                                    %Wait 4 seconds to let the user go back
+                                while toc()<2.5 && obj.Update(0,YStandVis_Backward(toc()/2.5))
+                                    %Wait 4 seconds to let the 30*user go back
                                 end
                             else
-                                while toc()<3.25 && obj.Update()
+                                while toc()<2.5 && obj.Update()
                                     %Wait 4 seconds to let the user go back
                                 end
                             end
@@ -370,22 +402,25 @@ classdef OptiTrackerSimple_London < handle
         
         % Prepare figure for visualizaions
         function PrepareFigure(obj)
+            set(0, 'DefaultFigurePosition', [1921 -119 1920 1200]);
             % Change outerposition for 2nd screen
-            obj.hFigure = figure('units','normalized','outerposition',[0 0 1 1],...
-                'Toolbar', 'none', 'Menu', 'none','Renderer','painters');
+            %             obj.hFigure = figure('units','normalized','outerposition',[0 0 1 1],...
+            %                 'Toolbar', 'none', 'Menu', 'none','Renderer','painters');
+            obj.hFigure = figure('Toolbar', 'none', 'Menu', 'none','Renderer','painters',...
+                'MenuBar', 'None', 'NumberTitle', 'off');
             set(gcf,'color','w')
             hAxis = gca();
-            obj.hCross = plot(0,0,'kx','MarkerSize',12,'LineWidth',2,'visible','off');
+            obj.hCross = plot(0,0,'ko','MarkerSize',20,'LineWidth',1.5,'visible','off');
             hold on
             plot([-1 -1 1 1],[-1 1 -1 1],'.','Color',[1 1 1]); % 1 m fra midten i alle retninger
-            obj.hBox = fill(hAxis,obj.BoxRadius*[-1 1 1 -1],(obj.leglength) + obj.BoxRadius*[-1 -1 1 1],'r','visible','off');
+            obj.hBox = fill(hAxis,obj.BoxRadius*[-1 1 1 -1],(obj.leglength) + obj.BoxRadius*[-1 -1 1 1],'m','visible','off');
             obj.hUser = plot(0,0,'bo','MarkerSize',8,'MarkerFaceColor','b','visible','off');
             obj.hTitle = title('');
-            %plot(-0.06,0,'kx','MarkerSize',12,'LineWidth',2) MDO - Other foot?
             axis equal off
             xlimValues = get(gca,'xlim');
             ylimValues = get(gca,'ylim');
             xlim(xlimValues)
+            %ylim([0 1]) %change this to change position on screen
             ylim(ylimValues) %changed this to get start in middle of screen
             set(obj.hFigure,'WindowButtonMotionFcn',@(~,~) obj.getMouse(hAxis));
         end
@@ -393,29 +428,58 @@ classdef OptiTrackerSimple_London < handle
         % Get all markers from Motive
         function [Markers,ToeID,XYZ] = getMarkers(obj)
             Markers = {};
-            ToeID = 1; %how is it that this works?
+            ToeID = 1; %
             XYZ = [];
             if obj.UseMouse
                 Markers{1} = obj.Cursor;
             elseif ~isempty(obj.natnetclient)
                 frame = obj.natnetclient.getFrame();
-                for i = 1:frame.LabeledMarker.Length
-                    if ~isempty(frame.LabeledMarker(i))
+                %                 elseif ~isempty(obj.natnetclient)
+                %                 frame = obj.natnetclient.getFrame();
+                for i=1:length(frame.RigidBody)
+                    if ~isempty(frame.RigidBody(i))
                         Markers{end+1} = frame.LabeledMarker(i);
+                        
                     else
-                        break;
+                        break
                     end
                 end
-                for i = 1:frame.UnlabeledMarker.Length
-                    if ~isempty(frame.UnlabeledMarker(i))
-                        Markers{end+1} = frame.UnlabeledMarker(i);
-                    else
-                        break;
-                    end
-                end
+                %                 for i = 1:frame.LabeledMarker.Length
+                %                     if ~isempty(frame.LabeledMarker(i))
+                %                         Markers{end+1} = frame.LabeledMarker(i);
+                %                     else
+                %                         break;
+                %                     end
+                %                 end
+                %                 for i = 1:frame.UnlabeledMarker.Length
+                %                     if ~isempty(frame.UnlabeledMarker(i))
+                %                         Markers{end+1} = frame.UnlabeledMarker(i);
+                %                     else
+                %                         break;
+                %                     end
+                %                 end
                 if nargout > 1 && ~isempty(Markers)
                     XYZ = cell2mat(cellfun(@(x) [x.x;x.y;x.z],Markers,'UniformOutput',false));
-                    [~,ToeID] = min(sum((XYZ-repmat([0;0;-1],1,length(Markers))).^2));
+                    % meanX = mean(XYZ(1,:)); %first row is X coordinates
+                    
+                    % if strcmpi(obj.whichLeg,'R')
+                    %                       rightSideIdx = find(XYZ(1,:) > meanX);
+                    %                       [~, Idx] = min(sum((XYZ(2:3,rightSideIdx)-repmat([-1;-1],1,length(rightSideIdx))).^2));
+                    % %                      [~, Idx] = min(XYZ(3,rightSideIdx));
+                    %                        ToeID = rightSideIdx(Idx);
+                    [~,ToeID] = min(sum((XYZ-repmat([0.3;0;-1],1,length(Markers))).^2));
+                    
+                    %else %left leg
+                    
+                    %                     leftSideIdx = find(XYZ(1,:) < meanX); %indices columns in XYZ
+                    %                     %find minimum distance to front and down for these
+                    %                     [~, IdxL] = min(sum((XYZ(2:3,leftSideIdx)-repmat([-1;-1],1,length(leftSideIdx))).^2));
+                    %                    %[~, Idx] = min(XYZ(3,leftSideIdx));
+                    %                     ToeID = leftSideIdx(IdxL);
+                    %[~,ToeID] = min(sum((XYZ-repmat([-0.3;0;-1],1,length(Markers))).^2));
+                    
+                    %end
+                    
                 end
             end
         end
